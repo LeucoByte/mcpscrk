@@ -7,6 +7,12 @@ at the hash with `hashcat` or `john`.
 It does **one thing**, and it does it well: build the *right* list for *this*
 person.
 
+<p align="center">
+  <img src="media/index.png" alt="mcpscrk workshop — Target, Forge, and Strike tabs" width="920">
+</p>
+
+<p align="center"><em>One workshop: intel in, blueprint out, hash tested — no fixed templates.</em></p>
+
 ---
 
 ## Breaking the mold
@@ -33,15 +39,33 @@ can always craft exactly what you want.
 Target (OSINT)  ->  Materials  ->  Blocks  ->  Blueprint  ->  Forge -> wordlist -> Strike
 ```
 
-1. **Target** — pull the subject's public footprint into the sets (names, dates,
-   relations, passions, places, numbers…).
-2. **Craft blocks** — pick a material, apply capitalization and leet, machine a
-   reusable piece. Dates and symbol sets come built in.
-3. **Blueprint** — drag pieces into order. The order of the blocks *is* the
-   nesting of the loops, and you own that order.
-4. **Forge** — set length bounds, preview the live count, write the list.
-5. **Strike** — detect the hash and run hashcat / john over the build. A verdict
-   rates how exposed the recovered password was.
+### Target — OSINT into materials
+
+Pull the subject's public footprint into the sets (names, dates, relations,
+passions, places, numbers…). Empty fields stay out of the way until you need them.
+
+<p align="center">
+  <img src="media/target.png" alt="Target tab — profile fields and crafted materials" width="880">
+</p>
+
+### Forge — blocks, blueprint, wordlist
+
+Pick a material, apply capitalization and leet, machine reusable blocks. Drag them
+into order — that order *is* the nesting of the loops. Set length bounds, preview
+the live count, write the list.
+
+<p align="center">
+  <img src="media/forge.png" alt="Forge tab — inventory, blueprint, and generation" width="880">
+</p>
+
+### Strike — detect, crack, verdict
+
+Detect the hash (hashcat + John's second opinion), run hashcat or john over your
+build with live progress and cancel, then read the exposure verdict on the recovery.
+
+<p align="center">
+  <img src="media/strike.png" alt="Strike tab — hash lab, progress, and cracked plaintext" width="880">
+</p>
 
 ---
 
