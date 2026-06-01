@@ -47,6 +47,7 @@
     engines: null, // { hashcat: bool, john: bool } availability
     wordlistEntries: 0, // entries in the attached wordlist
     crackTimer: null, // status-poll timer handle
+    detection: null, // { candidates, john, source } from last detect run
   };
 
   // --- tiny helpers ---------------------------------------------------------
@@ -440,8 +441,24 @@
 
   // --- preview / forge ------------------------------------------------------
 
+  function parseBound(raw, fallback) {
+    const s = String(raw).trim();
+    if (s === "" || s === "-") return fallback;
+    const n = parseInt(s, 10);
+    return Number.isFinite(n) && n >= 0 ? n : fallback;
+  }
+
+  function boundsLabel(min, max) {
+    const lo = min === 0 ? "-" : String(min);
+    const hi = max === 0 ? "-" : String(max);
+    return `[${lo}..${hi}]`;
+  }
+
   function bounds() {
-    return { min: parseInt($("#len-min").value, 10) || 1, max: parseInt($("#len-max").value, 10) || 64 };
+    return {
+      min: parseBound($("#len-min").value, 0),
+      max: parseBound($("#len-max").value, 0),
+    };
   }
   function currentMode() {
     const r = document.querySelector('input[name="mode"]:checked');
@@ -457,7 +474,7 @@
       `# preview - ${resp.lines.length} shown\n` +
       `# generated=${s.generated} emitted=${s.emitted} filtered=${s.filtered} duplicates=${s.duplicates} type=${s.kind}\n`;
     if (s.emitted === 0 && s.generated > 0) {
-      header += `# all ${groupDigits(String(s.generated))} candidates fell outside length [${min}-${max}] - widen the range.\n`;
+      header += `# all ${groupDigits(String(s.generated))} candidates fell outside length ${boundsLabel(min, max)} - widen the range.\n`;
     }
     $("#preview-output").textContent = header + "\n" + resp.lines.join("\n");
   }
@@ -471,7 +488,7 @@
     if (resp.error) return flashReport(resp.error, true);
     const s = resp.stats;
     const headline = s.emitted === 0
-      ? `<span class="err">0 entries written - all ${groupDigits(String(s.generated))} candidates fell outside length [${min}-${max}]. Widen the range.</span>`
+      ? `<span class="err">0 entries written - all ${groupDigits(String(s.generated))} candidates fell outside length ${boundsLabel(min, max)}. Widen the range.</span>`
       : `<span class="ok">${groupDigits(String(s.emitted))} entries written to ${escapeHtml(resp.path)}</span>`;
     $("#forge-report").innerHTML =
       headline +
@@ -550,6 +567,7 @@
       if (checked) checked.checked = false;
       warn.innerHTML = `<span class="err">No cracking engine installed.</span> You can craft and download wordlists, but cracking is disabled until hashcat or john is on PATH.`;
     }
+    renderHashCandidates();
   }
 
   // Enable/disable an engine radio and annotate its label.
@@ -567,39 +585,112 @@
     radio.checked = true;
   }
 
+  // Map common hashcat modes to john format names (fallback when john list is sparse).
+  const HC_TO_JOHN = {
+    0: "raw-md5", 100: "raw-sha1", 1400: "raw-sha256", 1700: "raw-sha512",
+    1000: "nt", 3200: "bcrypt", 1800: "sha512crypt", 500: "md5crypt",
+  };
+
+  function renderHashCandidates() {
+    const engine = currentEngine();
+    const select = $("#hash-candidates");
+    select.innerHTML = "";
+    if (!state.detection) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "Run detection first";
+      select.appendChild(opt);
+      return;
+    }
+
+    if (engine === "john") {
+      // John's own format guesses drive the dropdown when john is selected.
+      const names = [...state.detection.john];
+      // Enrich with john equivalents of hashcat candidates if missing.
+      state.detection.candidates.forEach((c) => {
+        if (c.mode !== null && HC_TO_JOHN[c.mode]) {
+          const jf = HC_TO_JOHN[c.mode];
+          if (!names.some((n) => n.toLowerCase() === jf.toLowerCase())) {
+            names.push(jf);
+          }
+        }
+      });
+      if (!names.length) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "No john formats detected - try another hash";
+        select.appendChild(opt);
+        return;
+      }
+      names.forEach((name) => {
+        const opt = document.createElement("option");
+        opt.value = "john:" + name;
+        opt.textContent = name;
+        select.appendChild(opt);
+      });
+    } else {
+      state.detection.candidates.forEach((c) => {
+        const opt = document.createElement("option");
+        opt.value = c.mode === null ? "" : "hc:" + c.mode;
+        opt.textContent = c.mode === null ? c.name : `${c.mode} - ${c.name}`;
+        select.appendChild(opt);
+      });
+    }
+    select.selectedIndex = 0;
+  }
+
+  function parseHashSelection() {
+    const val = $("#hash-candidates").value;
+    if (!val) return { mode: null, john_format: null };
+    if (val.startsWith("john:")) return { mode: null, john_format: val.slice(5) };
+    if (val.startsWith("hc:")) return { mode: parseInt(val.slice(3), 10), john_format: null };
+    return { mode: null, john_format: null };
+  }
+
+  function updateDetectDisplay() {
+    const select = $("#hash-candidates");
+    const det = state.detection;
+    if (!det) return;
+
+    const parts = [];
+    if (state.engines && state.engines.hashcat && det.candidates.length) {
+      const src = det.source === "hashcat" ? "hashcat --identify" : "built-in table";
+      parts.push(`<b>${src}:</b> ${det.candidates.length} candidate(s)`);
+    }
+    if (det.john && det.john.length) {
+      parts.push(`<b>john:</b> ${det.john.length} format guess(es)`);
+    }
+    const sel = select.options[0] ? select.options[0].textContent : "none";
+    $("#detect-status").innerHTML =
+      (parts.length ? parts.join(" &middot; ") : "No detection results") +
+      ` — selected: <b>${escapeHtml(sel)}</b>`;
+
+    const lines = [];
+    if (state.engines && state.engines.hashcat && det.candidates.length) {
+      const hc = det.candidates.slice(0, 8).map((c) =>
+        c.mode !== null ? `${c.mode} - ${c.name}` : c.name
+      ).map(escapeHtml).join(", ");
+      lines.push(`<span class="muted">hashcat sees:</span> ${hc}`);
+    }
+    if (det.john && det.john.length) {
+      lines.push(`<span class="muted">john sees:</span> ${det.john.slice(0, 10).map(escapeHtml).join(", ")}`);
+    }
+    $("#detect-john").innerHTML = lines.length ? lines.join("<br>") : "";
+  }
+
   async function detectHash() {
     const hash = $("#crack-hash").value.trim();
     if (!hash) return;
     $("#detect-status").textContent = "Detecting...";
     $("#detect-john").textContent = "";
     const resp = await api("/api/crack/detect", "POST", { hash });
-    const select = $("#hash-candidates");
-    select.innerHTML = "";
-    resp.candidates.forEach((c) => {
-      const opt = document.createElement("option");
-      opt.value = c.mode === null ? "" : String(c.mode);
-      opt.textContent = c.mode === null ? c.name : `${c.mode} - ${c.name}`;
-      select.appendChild(opt);
-    });
-    // Default to the first candidate: hashcat --identify lists structurally
-    // compatible types by ascending mode number, and the most common (e.g. MD5)
-    // sorts first - a sensible default.
-    select.selectedIndex = 0;
-    state.hashMode = select.value === "" ? null : parseInt(select.value, 10);
-
-    const srcName = resp.source === "hashcat" ? "hashcat --identify" : "built-in table";
-    $("#detect-status").innerHTML =
-      `<b>${srcName}:</b> ${resp.candidates.length} candidate(s). Selected: ` +
-      `<b>${select.options[0] ? select.options[0].textContent : "none"}</b>`;
-
-    // John's independent second opinion (shown, not trusted blindly: John's
-    // auto-detection of bare hex is weak and often says LM).
-    if (resp.john && resp.john.length) {
-      $("#detect-john").innerHTML =
-        `<span class="muted">john guesses:</span> ${resp.john.slice(0, 6).map(escapeHtml).join(", ")}`;
-    } else {
-      $("#detect-john").innerHTML = `<span class="muted">john guesses:</span> (john not installed or no opinion)`;
-    }
+    state.detection = {
+      candidates: resp.candidates,
+      john: resp.john || [],
+      source: resp.source,
+    };
+    renderHashCandidates();
+    updateDetectDisplay();
   }
 
   function openCrackStation() {
@@ -662,11 +753,16 @@
     if (!hash) return setCrackStatus("Paste a hash first.", true);
     if (!state.wordlistPath) return setCrackStatus("Attach a wordlist first.", true);
 
-    const sel = $("#hash-candidates");
-    const mode = sel.value === "" ? null : parseInt(sel.value, 10);
+    const sel = parseHashSelection();
+    if (engine === "hashcat" && sel.mode === null) {
+      return setCrackStatus("Select a hashcat mode first (run detection).", true);
+    }
+    if (engine === "john" && !sel.john_format) {
+      return setCrackStatus("Select a john format first (run detection).", true);
+    }
 
     const resp = await api("/api/crack/start", "POST", {
-      hash, engine, mode, wordlist: state.wordlistPath,
+      hash, engine, mode: sel.mode, john_format: sel.john_format, wordlist: state.wordlistPath,
     });
     if (!resp.ok) {
       return setCrackStatus(resp.error || "Could not start.", true);
@@ -693,6 +789,11 @@
     $("#crack-progress").classList.toggle("hidden", !running);
   }
 
+  function scrollCrackLog() {
+    const log = $("#crack-log");
+    log.scrollTop = log.scrollHeight;
+  }
+
   function pollCrack() {
     if (state.crackTimer) clearTimeout(state.crackTimer);
     const tick = async () => {
@@ -707,6 +808,7 @@
       if (j.log) {
         $("#crack-log").textContent = j.log;
         $("#crack-log").classList.remove("hidden");
+        scrollCrackLog();
       }
       if (j.finished) {
         crackRunningUI(false);
@@ -797,6 +899,12 @@
     $("#crack-cancel").addEventListener("click", cancelCrack);
     setupDropzone();
     loadEngines();
+    document.querySelectorAll('input[name="engine"]').forEach((r) => {
+      r.addEventListener("change", () => {
+        renderHashCandidates();
+        updateDetectDisplay();
+      });
+    });
 
     // Load the fixed blocks (Dates, Special Chars) on startup.
     refreshInventory();

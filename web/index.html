@@ -161,7 +161,7 @@
 
         <div class="card span2">
           <div class="card-title">Blueprint</div>
-          <p class="hint">Drag the pieces to set the order.</p>
+          <p class="hint">Drag the pieces to set the order. Left to right = nested loops: for each value in block 1, for each in block 2, … concatenate.</p>
           <div id="blueprint" class="blueprint"></div>
         </div>
 
@@ -170,11 +170,13 @@
           <div class="forge-controls">
             <div class="field">
               <label>Length min</label>
-              <input type="number" id="len-min" value="8" min="1" />
+              <input type="text" id="len-min" value="-" placeholder="-" />
+              <span class="hint">Use <code>-</code> for no minimum (0).</span>
             </div>
             <div class="field">
               <label>Length max</label>
-              <input type="number" id="len-max" value="16" min="1" />
+              <input type="text" id="len-max" value="-" placeholder="-" />
+              <span class="hint">Use <code>-</code> for no maximum.</span>
             </div>
             <div class="field">
               <label>Output mode</label>

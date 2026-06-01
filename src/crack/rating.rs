@@ -1,13 +1,13 @@
-//! Awareness rating for a recovered password.
+//! Target profile rating for a recovered password.
 //!
-//! Once a password falls, we score how predictable it was and attach a profile
-//! label. This is the whole educational point: show how fragile a hand-made
-//! password is once someone has your public data.
+//! Scored from the *attacker's* point of view: how much did this target think
+//! about what they were doing? A cracked password always means the build worked,
+//! but the profile tells you whether the target was ridiculous or careful.
 
 use serde::Serialize;
 
-/// Behavioural profile, from most to least careful. `Paranoid` is the ideal end
-/// of the scale and is never assigned to a cracked password by design.
+/// How the target behaves, seen through the attacker's lens.
+/// `Paranoid` is the unreachable ideal - a cracked password never earns it.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -17,6 +17,7 @@ pub enum Profile {
     Aware,
     Normal,
     Careless,
+    Ridiculous,
 }
 
 impl Profile {
@@ -27,6 +28,7 @@ impl Profile {
             Profile::Aware => "Aware",
             Profile::Normal => "Normal",
             Profile::Careless => "Careless",
+            Profile::Ridiculous => "Ridiculous",
         }
     }
 }
@@ -39,10 +41,7 @@ pub struct Verdict {
     pub why: String,
 }
 
-/// Rate a recovered plaintext from 0 (trivial) to 10 (resisted well).
-///
-/// The score is deliberately simple and pessimistic: anything our wordlist
-/// found is, by definition, derivable from public data, so it cannot score high.
+/// Rate how sophisticated the target looks from 0 (absurd) to 10 (tried hard).
 pub fn rate(plaintext: &str) -> Verdict {
     let len = plaintext.chars().count();
     let has_lower = plaintext.chars().any(|c| c.is_ascii_lowercase());
@@ -54,25 +53,71 @@ pub fn rate(plaintext: &str) -> Verdict {
         .filter(|b| **b)
         .count();
 
-    // Start from length, add a little for character variety, then cap hard:
-    // it was cracked from OSINT data, so it was never really strong.
-    let mut score = (len as f32) * 0.45 + (classes as f32) * 0.6;
-    score = score.clamp(0.5, 6.5);
+    // Length tier: short passwords scream "did not think twice".
+    let mut score = match len {
+        0..=6 => 0.4,
+        7..=8 => 0.9,
+        9..=11 => 1.8,
+        12..=15 => 3.2,
+        16..=19 => 4.8,
+        20..=24 => 6.2,
+        _ => 7.5 + (len.min(40) as f32 - 24.0) * 0.15,
+    };
 
-    let profile = if score < 2.0 {
+    score += (classes as f32) * 0.7;
+
+    // Short + low diversity = footprint paste. Hammer it down.
+    if len <= 10 && classes <= 2 {
+        score *= 0.45;
+    } else if len <= 12 && classes <= 2 {
+        score *= 0.65;
+    }
+
+    // Long mixed passwords: target put real effort in, still fell.
+    if len >= 16 && classes >= 4 {
+        score += 1.8;
+    }
+    if len >= 20 && classes >= 3 {
+        score += 1.0;
+    }
+
+    score = score.clamp(0.2, 9.8);
+
+    let profile = if score < 1.3 {
+        Profile::Ridiculous
+    } else if score < 2.5 {
         Profile::Careless
-    } else if score < 3.5 {
+    } else if score < 4.2 {
         Profile::Normal
-    } else if score < 4.5 {
+    } else if score < 6.8 {
         Profile::Aware
     } else {
         Profile::Careful
     };
 
-    let why = format!(
-        "Recovered from a wordlist built out of public data: {len} chars, {classes} character class(es). \
-         Anyone who can profile your footprint could reproduce it. Use a password manager."
-    );
+    let why = match profile {
+        Profile::Ridiculous => format!(
+            "{len} chars, {classes} class(es) - straight from the footprint, zero thought. \
+             This target did not think twice."
+        ),
+        Profile::Careless => format!(
+            "Short and predictable ({len} chars, {classes} classes). \
+             The target barely tried - public data was enough."
+        ),
+        Profile::Normal => format!(
+            "Average build ({len} chars, {classes} classes). \
+             Typical footprint password - the target did not go out of their way."
+        ),
+        Profile::Aware => format!(
+            "Some effort visible ({len} chars, {classes} classes), \
+             but still reconstructible from OSINT. The target thought a little, not enough."
+        ),
+        Profile::Careful => format!(
+            "Strong-looking password ({len} chars, {classes} classes) - \
+             the target clearly tried - yet your wordlist still rebuilt it from public facts."
+        ),
+        Profile::Paranoid => unreachable!(),
+    };
 
     Verdict {
         score: (score * 10.0).round() / 10.0,

@@ -18,8 +18,15 @@ impl Default for LengthFilter {
 
 impl LengthFilter {
     /// Whether a candidate passes the length filter (counted in characters).
+    /// A min of 0 means no lower bound; a max of 0 means no upper bound.
     pub fn accepts(&self, candidate: &str) -> bool {
         let len = candidate.chars().count();
-        len >= self.min && len <= self.max
+        if self.min > 0 && len < self.min {
+            return false;
+        }
+        if self.max > 0 && len > self.max {
+            return false;
+        }
+        true
     }
 }

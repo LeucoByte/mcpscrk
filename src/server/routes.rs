@@ -439,10 +439,10 @@ async fn metrics(State(state): State<AppState>, Json(body): Json<MetricsBody>) -
     })
 }
 
-/// Build a length filter, guarding against an inverted or zero range.
+/// Build a length filter. `min = 0` and `max = 0` mean no bound on that side.
 fn length_filter(min: usize, max: usize) -> LengthFilter {
-    let lo = min.max(1);
-    let hi = max.max(lo);
+    let lo = min;
+    let hi = if max == 0 { 0 } else { max.max(lo.max(1)) };
     LengthFilter { min: lo, max: hi }
 }
 
@@ -669,6 +669,9 @@ struct RunBody {
     hash: String,
     engine: runner::Engine,
     mode: Option<u32>,
+    /// John format name when engine is john (e.g. "bcrypt", "raw-md5").
+    #[serde(default)]
+    john_format: Option<String>,
     wordlist: String,
 }
 
@@ -715,9 +718,9 @@ async fn crack_start(State(state): State<AppState>, Json(body): Json<RunBody>) -
     crack::job::begin(&state.crack, total);
 
     let crack = state.crack.clone();
-    let RunBody { hash, engine, mode, .. } = body;
+    let RunBody { hash, engine, mode, john_format, .. } = body;
     tokio::spawn(async move {
-        crack::job::run(crack, available, engine, hash, mode, wordlist).await;
+        crack::job::run(crack, available, engine, hash, mode, john_format, wordlist).await;
     });
 
     Json(AckResponse { ok: true, error: None })

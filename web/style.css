@@ -189,9 +189,12 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--red); }
   transition: filter .12s, background .12s, color .12s, border-color .12s;
 }
 .btn.solid { background: var(--red); color: #faf3f1; border: 1px solid var(--red); }
-.btn.solid:hover { filter: brightness(1.12); }
+.btn.solid:hover:not(:disabled) { filter: brightness(1.12); }
 .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--border-bright); }
-.btn.ghost:hover { border-color: var(--red); color: var(--red-bright); }
+.btn.ghost:hover:not(:disabled) { border-color: var(--red); color: var(--red-bright); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn.solid:disabled { background: var(--red-dim); border-color: #5a2018; color: var(--text); filter: none; }
+.btn.ghost:disabled { background: transparent; border-color: var(--border); color: var(--muted); }
 .btn.full { width: 100%; margin-top: 6px; }
 .btn.mini { padding: 4px 9px; font-size: 11px; letter-spacing: 0; text-transform: none; }
 

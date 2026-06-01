@@ -109,6 +109,7 @@ pub async fn run(
     preferred: Engine,
     hash: String,
     mode: Option<u32>,
+    john_format: Option<String>,
     wordlist: PathBuf,
 ) {
     let other = match preferred {
@@ -145,7 +146,7 @@ pub async fn run(
             }
         }
 
-        match attempt(&job, engine, &hash, mode, &wordlist).await {
+        match attempt(&job, engine, &hash, mode, john_format.as_deref(), &wordlist).await {
             Attempt::Cracked(plain) => {
                 let verdict = rating::rate(&plain);
                 finalize(&job, |j| {
@@ -190,11 +191,12 @@ async fn attempt(
     engine: Engine,
     hash: &str,
     mode: Option<u32>,
+    john_format: Option<&str>,
     wordlist: &Path,
 ) -> Attempt {
     match engine {
         Engine::Hashcat => attempt_hashcat(job, hash, mode, wordlist).await,
-        Engine::John => attempt_john(job, hash, mode, wordlist).await,
+        Engine::John => attempt_john(job, hash, mode, john_format, wordlist).await,
     }
 }
 
@@ -281,6 +283,7 @@ async fn attempt_john(
     job: &Arc<Mutex<CrackJob>>,
     hash: &str,
     mode: Option<u32>,
+    john_format: Option<&str>,
     wordlist: &Path,
 ) -> Attempt {
     let hashfile = runner::temp_path("jtr-hash");
@@ -296,8 +299,11 @@ async fn attempt_john(
         .arg(format!("--pot={}", potfile.display()))
         .arg(format!("--session={}", session.display()))
         .arg("--progress-every=1");
-    if let Some(fmt) = runner::john_format(mode) {
-        cmd.arg(format!("--format={fmt}"));
+    let fmt = john_format
+        .map(|s| s.to_string())
+        .or_else(|| runner::john_format(mode).map(|s| s.to_string()));
+    if let Some(ref f) = fmt {
+        cmd.arg(format!("--format={f}"));
     }
     cmd.arg(&hashfile)
         .stdout(Stdio::piped())
@@ -328,8 +334,8 @@ async fn attempt_john(
     // Ask john what it cracked.
     let mut show = Command::new(JOHN_BIN);
     show.arg("--show").arg(format!("--pot={}", potfile.display()));
-    if let Some(fmt) = runner::john_format(mode) {
-        show.arg(format!("--format={fmt}"));
+    if let Some(ref f) = fmt {
+        show.arg(format!("--format={f}"));
     }
     show.arg(&hashfile).kill_on_drop(true);
     let plaintext = match show.output().await {
