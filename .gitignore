@@ -1,0 +1,17 @@
+# Rust build artifacts
+/target
+
+# Local build output: the binary is reproduced by `make` / `cargo build`,
+# so we keep the folder but not the (large, per-build) binary itself.
+/bin/mcpscrk
+
+# Generated wordlists and scratch files
+*.txt.out
+wordlists/
+/tmp/
+
+# Editor / OS noise
+.DS_Store
+*.swp
+.idea/
+.vscode/

@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>mcpscrk</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">mcpscrk</span>
+      <span class="tagline">Marco Calvo Password Cracker</span>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="about">BRIEF</button>
+      <button class="tab" data-tab="profile">TARGET</button>
+      <button class="tab" data-tab="workbench">FORGE</button>
+      <button class="tab" data-tab="cracking">STRIKE</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ABOUT -------------------------------------------------------------- -->
+    <section id="about" class="panel active">
+      <div class="hero">
+        <div class="hero-tag">// you know the target. build the key.</div>
+        <h1>Marco Calvo<br />Password Cracker</h1>
+        <p class="hero-sub">
+          An OSINT wordlist forge. Turn what you know about a target into a
+          surgical dictionary - block by block, in the order <em>you</em> choose -
+          then throw it at the hash with hashcat or john.
+        </p>
+      </div>
+
+      <div class="about-grid">
+        <div class="card">
+          <div class="card-title">Breaking the mold</div>
+          <p>
+            Online "personalized wordlist generators" hand you a fixed recipe:
+            same template, same order, same predictable output. mcpscrk throws
+            that away. Here you assemble the dictionary by hand, exactly how a
+            real operator would attack <em>this</em> person.
+          </p>
+          <p>
+            No blind cartesian product spraying billions of strings nobody types.
+            You decide every block, every transform, every loop. The wordlist is
+            a weapon you machined yourself.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-title">It does one thing</div>
+          <p>
+            Reconnaissance becomes raw material. Material becomes blocks. Blocks
+            become a blueprint, and the order of the blocks is the nesting of the
+            loops. One job - building the right list - done properly.
+          </p>
+          <p class="quote">
+            The forge is only as sharp as your intel. If the list does not break
+            the hash, you do not know the target well enough yet. Go back to
+            recon and machine a better build.
+          </p>
+        </div>
+
+        <div class="card span2">
+          <div class="card-title">The pipeline</div>
+          <div class="flow">
+            <div class="flow-step"><span class="flow-n">01</span><b>Target</b><span>Pull the subject's public footprint into the sets.</span></div>
+            <div class="flow-arrow">&rsaquo;</div>
+            <div class="flow-step"><span class="flow-n">02</span><b>Craft blocks</b><span>Pick a material, add capitalization and leet, machine a piece.</span></div>
+            <div class="flow-arrow">&rsaquo;</div>
+            <div class="flow-step"><span class="flow-n">03</span><b>Blueprint</b><span>Drag pieces into order. Order = nested loops.</span></div>
+            <div class="flow-arrow">&rsaquo;</div>
+            <div class="flow-step"><span class="flow-n">04</span><b>Forge</b><span>Set length bounds, preview, write the list.</span></div>
+            <div class="flow-arrow">&rsaquo;</div>
+            <div class="flow-step"><span class="flow-n">05</span><b>Strike</b><span>Throw it at the hash with hashcat / john.</span></div>
+          </div>
+        </div>
+
+        <div class="card span2">
+          <div class="card-title">The discipline</div>
+          <p>
+            Forge, strike, refine. If the dictionary misses, the build was wrong -
+            not the engine. This is a craft of iteration: tighten the intel,
+            re-order the blueprint, machine it again. Use only on targets you are
+            authorized to test.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROFILE ------------------------------------------------------------ -->
+    <section id="profile" class="panel">
+      <div class="panel-head">
+        <h2>Target Profile</h2>
+        <p>Lowercase only, no spaces, values separated by commas - e.g. <code>alderson,sepiol</code>. Capitalization and leet are applied later, per block.</p>
+        <div id="profile-summary" class="summary"></div>
+      </div>
+      <div id="profile-sets" class="sets"></div>
+      <div class="bar">
+        <button id="profile-clear" class="btn ghost">Clear</button>
+        <button id="profile-update" class="btn solid">Update materials</button>
+      </div>
+      <div id="profile-status" class="status"></div>
+    </section>
+
+    <!-- WORKBENCH ---------------------------------------------------------- -->
+    <section id="workbench" class="panel">
+      <div class="panel-head">
+        <h2>The Forge</h2>
+        <p>Machine blocks from your materials, arrange them into a blueprint, then forge the wordlist.</p>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <div class="card-title">Materials</div>
+          <p class="hint">Raw parameters from the profile. Select one to craft a block.</p>
+          <ul id="materials-list" class="materials"></ul>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Block Modifier Lab</div>
+          <div class="field">
+            <label>Selected material</label>
+            <div id="lab-source" class="readout">none selected</div>
+          </div>
+          <div class="field">
+            <label>Capitalization</label>
+            <div class="radio-row">
+              <label><input type="radio" name="cap" value="exact" /> Exact</label>
+              <label><input type="radio" name="cap" value="minimal" checked /> Minimal</label>
+              <label><input type="radio" name="cap" value="matrix" /> Matrix</label>
+            </div>
+          </div>
+          <div class="field">
+            <label class="inline"><input type="checkbox" id="leet" /> Apply leet speak</label>
+          </div>
+          <div class="field">
+            <label>Block name</label>
+            <input type="text" id="block-name" placeholder="auto (uses material name)" />
+          </div>
+          <button id="block-create" class="btn solid full">Create assembly piece</button>
+
+          <div class="divider"></div>
+
+          <div class="card-title">Test a word</div>
+          <p class="hint">Preview every form a single value expands into under the rules above.</p>
+          <div class="row">
+            <input type="text" id="test-word" placeholder="type a value" />
+            <button id="test-run" class="btn ghost">Expand</button>
+          </div>
+          <pre id="expand-output" class="output"></pre>
+        </div>
+
+        <div class="card span2">
+          <div class="card-title">Inventory</div>
+          <p class="hint">Crafted pieces, plus the fixed defaults. Add them to the blueprint to assemble.</p>
+          <div id="inventory" class="inventory"></div>
+        </div>
+
+        <div class="card span2">
+          <div class="card-title">Blueprint</div>
+          <p class="hint">Drag the pieces to set the order.</p>
+          <div id="blueprint" class="blueprint"></div>
+        </div>
+
+        <div class="card span2">
+          <div class="card-title">Forge Console</div>
+          <div class="forge-controls">
+            <div class="field">
+              <label>Length min</label>
+              <input type="number" id="len-min" value="8" min="1" />
+            </div>
+            <div class="field">
+              <label>Length max</label>
+              <input type="number" id="len-max" value="16" min="1" />
+            </div>
+            <div class="field">
+              <label>Output mode</label>
+              <div class="radio-row">
+                <label><input type="radio" name="mode" value="overwrite" checked /> Overwrite</label>
+                <label><input type="radio" name="mode" value="append" /> Append</label>
+              </div>
+            </div>
+            <div class="field grow">
+              <label>Output file name</label>
+              <input type="text" id="out-path" value="wordlist.txt" />
+              <span class="hint">Stored under /tmp. Forge overwrites/appends it; Download pulls it.</span>
+            </div>
+          </div>
+
+          <div class="metrics">
+            <span class="metric-label">Estimated combinations</span>
+            <span id="estimate" class="metric-value">0</span>
+          </div>
+
+          <div class="row">
+            <button id="preview-run" class="btn ghost">Preview</button>
+            <button id="forge-run" class="btn solid">Forge wordlist</button>
+            <button id="download-run" class="btn ghost">Download</button>
+          </div>
+
+          <pre id="preview-output" class="output"></pre>
+          <div id="forge-report" class="report"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CRACKING ----------------------------------------------------------- -->
+    <section id="cracking" class="panel">
+      <div class="panel-head">
+        <h2>Strike</h2>
+        <p>Throw the build at a real hash. Detection and the attack are run by hashcat / john - mcpscrk drives them and reads back the result.</p>
+        <div id="engine-status" class="summary"></div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <div class="card-title">Section A &middot; Target Hash</div>
+          <div class="field">
+            <label>Paste the target hash</label>
+            <input type="text" id="crack-hash" />
+          </div>
+          <div class="row">
+            <button id="detect-run" class="btn ghost">Detect hash</button>
+            <select id="hash-candidates" class="select"></select>
+          </div>
+          <div id="detect-status" class="status"></div>
+          <div id="detect-john" class="status"></div>
+          <div class="crackstation">
+            <button id="crackstation-run" class="btn ghost mini">Try CrackStation first</button>
+            <span class="hint">Already-indexed hashes crack instantly there - check before you burn cycles.</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Section B &middot; Engine</div>
+          <div class="field">
+            <label>Cracking engine</label>
+            <div class="radio-row">
+              <label id="engine-label-hashcat"><input type="radio" name="engine" value="hashcat" /> <span>hashcat</span></label>
+              <label id="engine-label-john"><input type="radio" name="engine" value="john" /> <span>john</span></label>
+            </div>
+            <div id="engine-warn" class="status"></div>
+          </div>
+          <div class="field">
+            <label>Wordlist (drag a file, or browse)</label>
+            <div id="dropzone" class="dropzone">
+              <span id="dropzone-label">Drop a wordlist here, or click to browse</span>
+              <input type="file" id="wordlist-file" hidden />
+            </div>
+          </div>
+        </div>
+
+        <div class="card span2">
+          <div class="card-title">Section C &middot; Run</div>
+          <div class="row">
+            <button id="crack-run" class="btn solid">Start cracking</button>
+            <button id="crack-cancel" class="btn ghost hidden" disabled>Cancel</button>
+          </div>
+          <div id="crack-status" class="status"></div>
+          <div id="crack-progress" class="progress hidden">
+            <div class="progress-track"><div id="crack-bar" class="progress-fill"></div></div>
+            <div id="crack-progress-text" class="progress-text"></div>
+          </div>
+          <pre id="crack-log" class="output hidden"></pre>
+        </div>
+
+        <div class="card span2">
+          <div class="card-title">Section D &middot; Verdict</div>
+          <div id="crack-verdict" class="report">No run yet.</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="brand-footer">mcpscrk &middot; Marco Calvo Password Cracker &middot; authorized targets only</footer>
+
+  <!-- Info popup: first values of a block / material ----------------------- -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-head">
+        <span id="modal-title"></span>
+        <button id="modal-close" class="btn ghost mini">Close</button>
+      </div>
+      <pre id="modal-body" class="output"></pre>
+    </div>
+  </div>
+
+  <!-- Edit popup: special characters --------------------------------------- -->
+  <div id="specials-modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-head">
+        <span id="specials-title">Edit</span>
+        <button id="specials-cancel" class="btn ghost mini">Cancel</button>
+      </div>
+      <p class="hint">Comma-separated. Leave empty to restore the program defaults.</p>
+      <input type="text" id="specials-input" />
+      <div class="bar">
+        <button id="specials-reset" class="btn ghost">Reset to defaults</button>
+        <button id="specials-save" class="btn solid">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
