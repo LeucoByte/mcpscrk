@@ -33,7 +33,7 @@ use crate::engine::{
     expand::CapMode,
     filters::LengthFilter,
     forge::{self, ForgeStats, WriteMode},
-    sets::{self, DATES_BLOCK, SEPARATORS_BLOCK, SPECIAL_BLOCK, SYMBOLS_BLOCK},
+    sets::{self, DATE_BLOCK, DIGIT_BLOCK, SEPARATOR_BLOCK, SPECIAL_CHAR_BLOCK, SYMBOLS_BLOCK},
 };
 
 use super::state::{AppState, Workshop};
@@ -123,11 +123,12 @@ impl BlockDto {
     }
 }
 
-/// Build the inventory listing: the fixed blocks first (dates, then the three
-/// editable symbol blocks), then crafted blocks in creation order.
+/// Build the inventory listing: the fixed blocks first (dates, digit, then the
+/// three editable symbol blocks), then crafted blocks in creation order.
 fn inventory_dto(ws: &Workshop) -> Vec<BlockDto> {
     let mut blocks = vec![
         BlockDto::from(&ws.dates, true),
+        BlockDto::from(&ws.digit, true),
         BlockDto::from(&ws.separators, true),
         BlockDto::from(&ws.specials, true),
         BlockDto::from(&ws.symbols, true),
@@ -138,7 +139,10 @@ fn inventory_dto(ws: &Workshop) -> Vec<BlockDto> {
 
 /// Whether a name belongs to a permanent (non-craftable) block.
 fn is_reserved(name: &str) -> bool {
-    matches!(name, DATES_BLOCK | SEPARATORS_BLOCK | SPECIAL_BLOCK | SYMBOLS_BLOCK)
+    matches!(
+        name,
+        DATE_BLOCK | DIGIT_BLOCK | SEPARATOR_BLOCK | SPECIAL_CHAR_BLOCK | SYMBOLS_BLOCK
+    )
 }
 
 // --- profile / materials -----------------------------------------------------
@@ -315,7 +319,7 @@ struct DeleteBlockBody {
 /// Remove a crafted block. The fixed specials block is never removed.
 async fn delete_block(State(state): State<AppState>, Json(body): Json<DeleteBlockBody>) -> Json<BlocksResponse> {
     let mut ws = state.workshop.lock().unwrap();
-    if body.name != SPECIAL_BLOCK {
+    if body.name != SPECIAL_CHAR_BLOCK {
         ws.inventory.retain(|b| b.name != body.name);
     }
     Json(BlocksResponse {

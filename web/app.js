@@ -33,7 +33,17 @@
   ];
 
   // Permanent symbol blocks that can be edited in place (pencil), but not deleted.
-  const EDITABLE_SYMBOLS = ["Separators", "Special Chars", "All Symbols"];
+  const EDITABLE_SYMBOLS = ["Separator", "Special Char", "All Symbols"];
+  // Blocks whose first slot is "" (optional — loop may contribute nothing).
+  const NULL_CHOICE_BLOCKS = ["Digit", "Separator", "Special Char", "All Symbols"];
+
+  /** CSV token for the null blueprint slot (contribute nothing in that loop). */
+  function formatCsvValue(v) {
+    return v === "" ? '""' : v;
+  }
+  function formatPeekValue(v) {
+    return v === "" ? '""' : v;
+  }
 
   const state = {
     materials: [],
@@ -158,7 +168,7 @@
       $("#lab-source").textContent = "none selected";
     }
     renderMaterials();
-    // The fixed Dates block is auto-derived from the profile, so refresh it.
+    // The fixed Date block is auto-derived from the profile, so refresh it.
     refreshInventory();
     $("#profile-status").textContent = state.materials.length
       ? `Materials updated: ${state.materials.length} available.`
@@ -278,8 +288,8 @@
       piece.appendChild(pieceButton("+ add", "Add to blueprint", () => addToBlueprint(b.name)));
       piece.appendChild(pieceButton("info", "Show first values", () => showBlockPeek(b.name)));
 
-      // The three symbol blocks are editable in place via a pencil; Dates is
-      // auto-derived from the profile; crafted blocks can be deleted.
+      // The three symbol blocks are editable in place via a pencil; Date and
+      // Digit are fixed; crafted blocks can be deleted.
       if (EDITABLE_SYMBOLS.includes(b.name)) {
         piece.appendChild(pieceButton("edit", "Edit characters", () => openSpecialsEditor(b.name)));
       } else if (!b.fixed) {
@@ -417,7 +427,12 @@
   }
   function openModal(resp) {
     $("#modal-title").textContent = `${resp.name} - ${resp.count} value(s), first ${resp.values.length}`;
-    $("#modal-body").textContent = resp.values.join("\n") || "(empty)";
+    let body = resp.values.map(formatPeekValue).join("\n") || "(empty)";
+    if (NULL_CHOICE_BLOCKS.includes(resp.name)) {
+      body +=
+        "\n\n—\nAlso contemplates null case (\"\"): this loop may add nothing and is included in the forge.";
+    }
+    $("#modal-body").textContent = body;
     $("#modal").classList.remove("hidden");
   }
   function closeModal() {
@@ -524,7 +539,7 @@
     state.editingSymbols = name;
     $("#specials-title").textContent = "Edit " + name;
     const resp = await api("/api/block/peek", "POST", { name, limit: 200 });
-    $("#specials-input").value = resp.values.join(",");
+    $("#specials-input").value = resp.values.map(formatCsvValue).join(",");
     $("#specials-modal").classList.remove("hidden");
   }
   function closeSpecialsModal() {
@@ -906,7 +921,7 @@
       });
     });
 
-    // Load the fixed blocks (Dates, Special Chars) on startup.
+    // Load the fixed blocks (Date, Digit, symbols…) on startup.
     refreshInventory();
   }
 

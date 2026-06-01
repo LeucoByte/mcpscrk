@@ -1,8 +1,9 @@
 //! Shared, in-memory workbench state.
 //!
 //! Holds the current OSINT profile and the inventory of crafted blocks, plus
-//! the permanent blocks that come by default: the auto-derived dates and three
-//! editable symbol blocks (separators, special chars, and the union of both).
+//! the permanent blocks that come by default: the auto-derived dates, the fixed
+//! digit block (0-9), and three editable symbol blocks (separators, special
+//! chars, and the union of both).
 //! The blueprint order, length filter and output settings are passed per request.
 
 use std::sync::{Arc, Mutex};
@@ -12,7 +13,8 @@ use crate::engine::{
     block::Block,
     dates,
     sets::{
-        self, ProfileSets, DATES_BLOCK, SEPARATORS_BLOCK, SPECIAL_BLOCK, SYMBOLS_BLOCK,
+        self, ProfileSets, DATE_BLOCK, DIGIT_BLOCK, SEPARATOR_BLOCK, SPECIAL_CHAR_BLOCK,
+        SYMBOLS_BLOCK,
     },
 };
 
@@ -22,6 +24,8 @@ pub struct Workshop {
     pub inventory: Vec<Block>,
     /// Auto-derived dates block, refreshed from the profile `dates` field.
     pub dates: Block,
+    /// Fixed 0-9 digit block (not editable).
+    pub digit: Block,
     /// Editable symbol blocks (separators / non-separator specials / both).
     pub separators: Block,
     pub specials: Block,
@@ -43,12 +47,17 @@ impl Default for Workshop {
             profile: ProfileSets::default(),
             inventory: Vec::new(),
             dates: Block {
-                name: DATES_BLOCK.to_string(),
+                name: DATE_BLOCK.to_string(),
                 source: "dates".to_string(),
                 values: Vec::new(),
             },
-            separators: fixed_block(SEPARATORS_BLOCK),
-            specials: fixed_block(SPECIAL_BLOCK),
+            digit: Block {
+                name: DIGIT_BLOCK.to_string(),
+                source: "digits".to_string(),
+                values: sets::default_digits(),
+            },
+            separators: fixed_block(SEPARATOR_BLOCK),
+            specials: fixed_block(SPECIAL_CHAR_BLOCK),
             symbols: fixed_block(SYMBOLS_BLOCK),
         }
     }
@@ -65,8 +74,8 @@ impl Workshop {
     /// input restores that block's defaults. Unknown names are ignored.
     pub fn edit_symbols(&mut self, name: &str, csv: &str) {
         let target = match name {
-            SEPARATORS_BLOCK => &mut self.separators,
-            SPECIAL_BLOCK => &mut self.specials,
+            SEPARATOR_BLOCK => &mut self.separators,
+            SPECIAL_CHAR_BLOCK => &mut self.specials,
             SYMBOLS_BLOCK => &mut self.symbols,
             _ => return,
         };
@@ -81,9 +90,10 @@ impl Workshop {
     /// Find a block by name, including the permanent blocks.
     pub fn block(&self, name: &str) -> Option<&Block> {
         match name {
-            DATES_BLOCK => Some(&self.dates),
-            SEPARATORS_BLOCK => Some(&self.separators),
-            SPECIAL_BLOCK => Some(&self.specials),
+            DATE_BLOCK => Some(&self.dates),
+            DIGIT_BLOCK => Some(&self.digit),
+            SEPARATOR_BLOCK => Some(&self.separators),
+            SPECIAL_CHAR_BLOCK => Some(&self.specials),
             SYMBOLS_BLOCK => Some(&self.symbols),
             _ => self.inventory.iter().find(|b| b.name == name),
         }

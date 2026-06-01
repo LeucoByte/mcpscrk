@@ -45,32 +45,52 @@ pub const DEFAULT_SPECIALS: &[&str] = &[
     "!", "@", "#", "$", "%", "^", "&", "*", "-", "_", "+", "=", ".", ",", "?", "/",
 ];
 
+/// Optional "contribute nothing" slot prepended to Digit and symbol blocks so a
+/// blueprint loop can skip that piece without removing it from the chain.
+pub const NULL_CHOICE: &str = "";
+
 /// Typical weak separators people drop between two words.
 pub const DEFAULT_SEPARATORS: &[&str] = &[".", "-", "_"];
 
-/// Common symbols that are NOT separators (default of the "Special Chars" block).
+/// Common symbols that are NOT separators (default of the "Special Char" block).
 pub const DEFAULT_SPECIAL_ONLY: &[&str] =
     &["!", "@", "#", "$", "%", "^", "&", "*", "+", "=", ",", "?", "/"];
 
 /// Names of the permanent, editable symbol blocks that always live in the
 /// inventory. They are not craftable materials and cannot be deleted, but their
 /// contents can be edited (and reset to the defaults above).
-pub const SEPARATORS_BLOCK: &str = "Separators";
-pub const SPECIAL_BLOCK: &str = "Special Chars";
+pub const SEPARATOR_BLOCK: &str = "Separator";
+pub const SPECIAL_CHAR_BLOCK: &str = "Special Char";
 pub const SYMBOLS_BLOCK: &str = "All Symbols";
 
-/// Name of the permanent, auto-derived dates block. Its contents are produced
+/// Name of the permanent, auto-derived date block. Its contents are produced
 /// from the profile `dates` field by the date engine and refresh on update.
-pub const DATES_BLOCK: &str = "Dates";
+pub const DATE_BLOCK: &str = "Date";
+
+/// Name of the permanent digit block (0-9). Not craftable or editable.
+pub const DIGIT_BLOCK: &str = "Digit";
+
+/// Prepend the null choice once, if missing (first index = skip this loop).
+fn with_null_choice(mut values: Vec<String>) -> Vec<String> {
+    if values.first().map(String::as_str) != Some(NULL_CHOICE) {
+        values.insert(0, String::new());
+    }
+    values
+}
+
+/// Default contents of the Digit block, in order.
+pub fn default_digits() -> Vec<String> {
+    with_null_choice((0..=9).map(|d| d.to_string()).collect())
+}
 
 /// Default contents for a given editable symbol block, by name.
 pub fn default_symbols(block: &str) -> Vec<String> {
     let defaults: &[&str] = match block {
-        SEPARATORS_BLOCK => DEFAULT_SEPARATORS,
-        SPECIAL_BLOCK => DEFAULT_SPECIAL_ONLY,
+        SEPARATOR_BLOCK => DEFAULT_SEPARATORS,
+        SPECIAL_CHAR_BLOCK => DEFAULT_SPECIAL_ONLY,
         _ => DEFAULT_SPECIALS, // SYMBOLS_BLOCK and fallback
     };
-    defaults.iter().map(|s| s.to_string()).collect()
+    with_null_choice(defaults.iter().map(|s| s.to_string()).collect())
 }
 
 /// A known OSINT parameter: its key, display label and category.
@@ -185,15 +205,62 @@ pub fn capitalize_first(s: &str) -> String {
     }
 }
 
-/// Split a comma-separated string into trimmed, non-empty, de-duplicated values.
+/// Recognize the null-choice token in a CSV field (`""`, `(empty)`, or blank).
+fn parse_csv_token(token: &str) -> String {
+    let t = token.trim();
+    if t.is_empty()
+        || t == "\"\""
+        || t == "''"
+        || t.eq_ignore_ascii_case("(empty)")
+        || t.eq_ignore_ascii_case("(none)")
+    {
+        String::new()
+    } else {
+        t.to_string()
+    }
+}
+
+/// Split a comma-separated string into trimmed, de-duplicated values.
 ///
+/// Blank fields and `""` mean the null choice (contribute nothing in that loop).
 /// Order is preserved so the user sees their input echoed back predictably.
 pub fn parse_csv(raw: &str) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
-    raw.split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .filter(|s| seen.insert(s.to_string()))
-        .map(str::to_string)
-        .collect()
+    let mut out = Vec::new();
+    for token in raw.split(',') {
+        let val = parse_csv_token(token);
+        let key = if val.is_empty() {
+            String::new()
+        } else {
+            val.clone()
+        };
+        if seen.insert(key) {
+            out.push(val);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_blocks_lead_with_null_choice() {
+        assert_eq!(default_digits().first().map(String::as_str), Some(NULL_CHOICE));
+        assert_eq!(
+            default_symbols(SEPARATOR_BLOCK).first().map(String::as_str),
+            Some(NULL_CHOICE)
+        );
+    }
+
+    #[test]
+    fn parse_csv_null_and_symbols() {
+        assert_eq!(parse_csv("\"\""), vec![String::new()]);
+        assert_eq!(
+            parse_csv("\"\",."),
+            vec![String::new(), ".".to_string()]
+        );
+        assert_eq!(parse_csv("a,(empty),b"), vec!["a".into(), String::new(), "b".into()]);
+    }
 }

@@ -48,15 +48,26 @@ Profile (OSINT facts)  ->  Materials  ->  Blocks  ->  Blueprint  ->  Forge -> wo
 - **Materials**: the non-empty profile fields, offered as raw ingredients.
 - **Blocks** (`engine/block.rs`): an "assembly piece" — a de-duplicated set of
   strings built from a material **plus rules**: capitalization mode (`exact`,
-  `minimal`, `matrix`) and optional leet. The `Dates` material runs through the
-  date engine (`engine/dates.rs`).
+  `minimal`, `matrix`) and optional leet. The `dates` profile field runs through the
+  date engine (`engine/dates.rs`) into the permanent **`Date`** block.
 - **Permanent blocks** (always present, never craftable, never deletable):
-  - `Dates` — auto-derived from the profile `dates` field; refreshes on profile update.
-  - `Separators` — editable, defaults `.` `-` `_`.
-  - `Special Chars` — editable, the common symbols that are **not** separators.
-  - `All Symbols` — editable, the union of both.
-  The three symbol blocks are editable in place (pencil icon); empty input
-  restores their defaults. See `engine/sets.rs` constants + `server/state.rs`.
+  - **`Date`** — auto-derived from the profile `dates` field; refreshes on profile update.
+  - **`Digit`** — fixed `0`–`9`; not editable.
+  - **`Separator`** — editable; defaults `.` `-` `_`.
+  - **`Special Char`** — editable; common symbols that are **not** separators.
+  - **`All Symbols`** — editable; union of separators + special chars.
+  The three symbol blocks are editable in place (pencil icon); empty input restores
+  their defaults. See `engine/sets.rs` constants + `server/state.rs`.
+- **Null choice (`""`)** — `Digit`, `Separator`, `Special Char`, and `All Symbols`
+  each **lead with an empty string** as their first value (`NULL_CHOICE`,
+  `with_null_choice()` in `engine/sets.rs`). In `engine/forge.rs` the odometer
+  concatenates each picked value with `push_str`; `""` adds zero characters. The
+  block is **not** empty (`Block::is_empty()` is false when `values` contains `""`).
+  Use this to keep a loop in the blueprint while also emitting candidates that skip
+  that slot. Inventory **info** (`POST /api/block/peek`) shows `""` first plus a UI
+  footnote in `web/app.js` (`NULL_CHOICE_BLOCKS`). When editing symbol blocks via
+  `POST /api/specials`, encode null as `""`, `(empty)`, or a blank CSV field
+  (`parse_csv()` in `engine/sets.rs`).
 - **Blueprint**: an ordered list of block names. Order = nested loops. `[A][B][C]`
   emits `a+b+c` for every combination. Reorder by drag-and-drop in the UI.
 - **Forge** (`engine/forge.rs`): lazy odometer iteration over the blueprint, with
@@ -65,6 +76,79 @@ Profile (OSINT facts)  ->  Materials  ->  Blocks  ->  Blueprint  ->  Forge -> wo
 - **Crack** (`crack/`): detect the hash type (hashcat `--identify`, with a
   built-in fallback table), then run hashcat or john against an uploaded
   wordlist, then rate the recovered plaintext.
+
+---
+
+## 2b. API workflow (for agents)
+
+Typical automated sequence — **always via HTTP**, not ad-hoc scripts:
+
+1. **`POST /api/profile`** — store all OSINT fields (comma-separated, lowercase).
+   Returns materials. Refreshes the permanent **`Date`** block via
+   `Workshop::rebuild_dates()` in `server/state.rs`.
+2. **`GET /api/materials`** or material peek — confirm which keys have values.
+3. **`POST /api/block`** — craft one block per material + rules (`cap`, `leet`).
+   Reserved names are rejected (`is_reserved()` in `server/routes.rs`): `Date`,
+   `Digit`, `Separator`, `Special Char`, `All Symbols`.
+4. **`GET /api/blocks`** — inventory; permanent blocks listed first by
+   `inventory_dto()` (Date, Digit, Separator, Special Char, All Symbols, then crafted).
+5. **`POST /api/metrics`** — estimated combination count **before** forging.
+6. **`POST /api/preview`** — first N lines without writing disk.
+7. **`POST /api/forge`** — write wordlist. Use **`mode: "append"`** for additional
+   blueprints into the same path (de-duplicates against existing lines in
+   `engine/forge.rs`). Set **`min` / `max`** to match target policy (`filters.rs`;
+   UI sends `-` for no bound).
+8. **`POST /api/crack/detect`** → **`POST /api/crack/start`** → poll
+   **`GET /api/crack/status`** until `finished`.
+
+### Permanent blocks over the API
+
+| Block | Peek | Edit |
+|-------|------|------|
+| `Date` | `POST /api/block/peek` `{"name":"Date"}` | auto from profile `dates` |
+| `Digit` | same; first value is always `""`, then `0`–`9` | not editable |
+| `Separator` | same; leads with `""` | `POST /api/specials` |
+| `Special Char` | same | `POST /api/specials` |
+| `All Symbols` | same | `POST /api/specials` |
+
+```bash
+# Peek Digit — note "" first (null choice).
+curl -s localhost:8787/api/block/peek -H 'content-type: application/json' \
+  -d '{"name":"Digit","limit":20}'
+
+# Restore Separator defaults (includes leading "").
+curl -s localhost:8787/api/specials -H 'content-type: application/json' \
+  -d '{"name":"Separator","values":""}'
+```
+
+### Blueprint and forge parameters
+
+- **`order`**: array of block **names** exactly as shown in `GET /api/blocks`.
+- **`min` / `max`**: inclusive character length (`LengthFilter::accepts` in
+  `engine/filters.rs`). Integer in JSON; `0` means no bound on that side.
+- **`mode`**: `"overwrite"` truncates the file; `"append"` keeps existing lines
+  in the de-dupe set.
+- **`path`**: server-side path (e.g. `/tmp/wordlist.txt`).
+
+### Expansion rules (when crafting blocks)
+
+- **`cap`**: `exact` | `minimal` | `matrix` — see `CapMode` in `engine/expand.rs`.
+- **`leet`**: boolean; combinatorial leet guarded by `COMBINATORIAL_CAP`.
+- **`source: "dates"`** on a crafted block runs `dates::expand_all()` inside
+  `Block::build()` — but the usual pattern is to use the permanent **`Date`**
+  block in the blueprint instead.
+
+### Internal cross-reference
+
+| Concern | Where |
+|---------|--------|
+| Profile catalog / field keys | `sets::catalog()`, `FIELD_GROUPS` in `web/app.js` |
+| Reserved block names | `DATE_BLOCK`, `DIGIT_BLOCK`, `SEPARATOR_BLOCK`, `SPECIAL_CHAR_BLOCK`, `SYMBOLS_BLOCK` in `engine/sets.rs` |
+| Block lookup (incl. permanent) | `Workshop::block()` in `server/state.rs` |
+| Forge loop | `forge::generate()` in `engine/forge.rs` |
+| Crack job lifecycle | `crack/job.rs` |
+| Hash detection | `crack/detect.rs` |
+| Verdict after crack | `crack/rating.rs` → `status.verdict` |
 
 ---
 
@@ -184,10 +268,14 @@ curl -s localhost:8787/api/block/peek -H 'content-type: application/json' \
 curl -s localhost:8787/api/block/delete -H 'content-type: application/json' \
   -d '{"name":"Firstname"}'
 
-# Edit a permanent symbol block (name = Separators | Special Chars | All Symbols).
-# Empty values restores that block's defaults.
+# Edit a permanent symbol block (name = Separator | Special Char | All Symbols).
+# Empty values restores defaults (including leading ""). Use "" in CSV for null slot.
 curl -s localhost:8787/api/specials -H 'content-type: application/json' \
-  -d '{"name":"Special Chars","values":"!,@,#,$"}'
+  -d '{"name":"Special Char","values":"!,@,#,$"}'
+
+# Peek a permanent block (Digit / Separator include "" as first value).
+curl -s localhost:8787/api/block/peek -H 'content-type: application/json' \
+  -d '{"name":"Separator","limit":20}'
 ```
 
 ### Metrics, preview, forge, download
@@ -195,15 +283,19 @@ curl -s localhost:8787/api/specials -H 'content-type: application/json' \
 ```bash
 # Estimated total + per-block sizes for an ordered blueprint.
 curl -s localhost:8787/api/metrics -H 'content-type: application/json' \
-  -d '{"order":["Firstname","Dates","Special Chars"]}'
+  -d '{"order":["Firstname","Date","Special Char"]}'
 
 # First N candidates, no disk write.
 curl -s localhost:8787/api/preview -H 'content-type: application/json' \
-  -d '{"order":["Firstname","Dates","Special Chars"],"min":1,"max":64,"limit":20}'
+  -d '{"order":["Firstname","Date","Special Char"],"min":1,"max":64,"limit":20}'
 
 # Write the wordlist. mode in {overwrite,append}.
 curl -s localhost:8787/api/forge -H 'content-type: application/json' \
-  -d '{"order":["Firstname","Dates","Special Chars"],"min":1,"max":64,"mode":"overwrite","path":"/tmp/wordlist.txt"}'
+  -d '{"order":["Firstname","Date","Special Char"],"min":1,"max":64,"mode":"overwrite","path":"/tmp/wordlist.txt"}'
+
+# Second hypothesis into the same file (append de-duplicates).
+curl -s localhost:8787/api/forge -H 'content-type: application/json' \
+  -d '{"order":["Firstname","Separator","Date","Digit"],"min":8,"max":64,"mode":"append","path":"/tmp/wordlist.txt"}'
 
 # Download a generated file.
 curl -s 'localhost:8787/api/download?path=/tmp/wordlist.txt' -o out.txt
@@ -262,10 +354,10 @@ sanity check after changes.
 - **Known plaintext (the lesson):** `Elliot1986#`
   Verify with: `printf '%s' 'Elliot1986#' | md5sum`
 - **OSINT facts:** firstname `elliot`, date `09/09/1986`.
-- **Blueprint:** `Firstname` (cap `minimal`) + `Dates` + `Special Chars`.
+- **Blueprint:** `Firstname` (cap `minimal`) + `Date` + `Special Char`.
   - `minimal` firstname yields `elliot / ELLIOT / Elliot`.
   - the date engine yields `1986` (among others).
-  - `Special Chars` contains `#`.
+  - `Special Char` contains `#`.
   - So the forge produces `Elliot` + `1986` + `#` = `Elliot1986#`. 
 
 Scripted version:
@@ -278,7 +370,7 @@ curl -s localhost:$PORT/api/profile -H 'content-type: application/json' \
 curl -s localhost:$PORT/api/block -H 'content-type: application/json' \
   -d '{"name":"Firstname","source":"firstname","cap":"minimal","leet":false}' >/dev/null
 curl -s localhost:$PORT/api/forge -H 'content-type: application/json' \
-  -d '{"order":["Firstname","Dates","Special Chars"],"min":1,"max":64,"mode":"overwrite","path":"/tmp/wordlist.txt"}'
+  -d '{"order":["Firstname","Date","Special Char"],"min":1,"max":64,"mode":"overwrite","path":"/tmp/wordlist.txt"}'
 # Detect -> should report MD5 (mode 0)
 curl -s localhost:$PORT/api/crack/detect -H 'content-type: application/json' -d "{\"hash\":\"$HASH\"}"
 # Crack -> should recover Elliot1986#  (start, then poll status; see Cracking lab above)
@@ -299,9 +391,16 @@ the wordlist build is correct; only the cracking step needs the external tool.
 - **Rebuild after `web/` edits** (assets are `include_str!`-embedded).
 - **Combinatorial explosion** is real: `matrix` capitalization and combinatorial
   leet are guarded by `COMBINATORIAL_CAP` in `engine/expand.rs`. Keep guards.
-- **Permanent blocks** (`Dates`, `Separators`, `Special Chars`, `All Symbols`)
+- **Permanent blocks** (`Date`, `Digit`, `Separator`, `Special Char`, `All Symbols`)
   are reserved: `create_block` rejects those names; they never appear as
   materials; only the three symbol blocks are editable (pencil), never deletable.
+  **`Digit`** is fixed and not editable; **`Date`** is auto-derived from profile.
+- **Null choice** — never remove `with_null_choice()` from `Digit` / symbol defaults.
+  An empty block (`values.is_empty()`) yields nothing; a block whose first value
+  is `""` is **not** empty and must still forge correctly (`forge.rs` concatenates
+  zero characters for that slot).
+- **Length filter** — `min`/`max` of `-` (UI) means no bound (`filters.rs`). Match
+  the target site's policy in forge to cut noise early (especially on append passes).
 - **Hashcat install pain:** the distro `.deb` extracted by hand tends to miss
   OpenCL kernels/`libminizip`. Use `sudo apt install` + an OpenCL ICD (`pocl`)
   rather than hand-extracting packages. The previous agent burned a lot of time
