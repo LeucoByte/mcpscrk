@@ -216,6 +216,8 @@ struct ExpandQuery {
     cap: String,
     #[serde(default)]
     leet: bool,
+    #[serde(default)]
+    reverse: bool,
 }
 
 /// Response of `GET /api/expand`.
@@ -233,6 +235,7 @@ async fn expand_word(Query(q): Query<ExpandQuery>) -> Json<ExpandResponse> {
     let rules = BlockRules {
         cap: CapMode::parse(&q.cap),
         leet: q.leet,
+        reverse: q.reverse,
     };
     let block = Block::build("preview", &q.source, std::slice::from_ref(&q.word), rules);
 
@@ -253,6 +256,8 @@ struct CreateBlockBody {
     cap: String,
     #[serde(default)]
     leet: bool,
+    #[serde(default)]
+    reverse: bool,
 }
 
 /// Response carrying the full inventory (plus an optional error message).
@@ -296,6 +301,7 @@ async fn create_block(State(state): State<AppState>, Json(body): Json<CreateBloc
     let rules = BlockRules {
         cap: CapMode::parse(&body.cap),
         leet: body.leet,
+        reverse: body.reverse,
     };
     let block = Block::build(&name, &body.source, &raw, rules);
 

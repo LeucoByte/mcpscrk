@@ -250,6 +250,7 @@
       source: state.selected,
       cap: currentCap(),
       leet: $("#leet").checked,
+      reverse: $("#reverse").checked,
     });
     state.inventory = resp.blocks;
     renderInventory();
@@ -488,6 +489,7 @@
       source: state.selected || "",
       cap: currentCap(),
       leet: $("#leet").checked,
+      reverse: $("#reverse").checked,
     });
     const resp = await api("/api/expand?" + params.toString());
     $("#expand-output").textContent = `${resp.count} variant(s)\n\n` + resp.variants.join("\n");

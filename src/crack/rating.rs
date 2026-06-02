@@ -7,17 +7,15 @@
 use serde::Serialize;
 
 /// How the target behaves, seen through the attacker's lens.
-/// `Paranoid` is the unreachable ideal - a cracked password never earns it.
-#[allow(dead_code)]
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Profile {
-    Paranoid,
-    Careful,
-    Aware,
-    Normal,
-    Careless,
     Ridiculous,
+    Careless,
+    Normal,
+    Aware,
+    Careful,
+    Paranoid,
 }
 
 impl Profile {
@@ -52,6 +50,7 @@ pub fn rate(plaintext: &str) -> Verdict {
         .iter()
         .filter(|b| **b)
         .count();
+    let entropy = shannon_entropy(plaintext);
 
     // Length tier: short passwords scream "did not think twice".
     let mut score = match len {
@@ -65,6 +64,15 @@ pub fn rate(plaintext: &str) -> Verdict {
     };
 
     score += (classes as f32) * 0.7;
+
+    // Entropy: more unique character use per length.
+    if entropy >= 4.0 {
+        score += 1.2;
+    } else if entropy >= 3.5 {
+        score += 0.6;
+    } else if entropy >= 3.0 {
+        score += 0.25;
+    }
 
     // Short + low diversity = footprint paste. Hammer it down.
     if len <= 10 && classes <= 2 {
@@ -81,7 +89,7 @@ pub fn rate(plaintext: &str) -> Verdict {
         score += 1.0;
     }
 
-    score = score.clamp(0.2, 9.8);
+    score = score.clamp(0.2, 9.9);
 
     let profile = if score < 1.3 {
         Profile::Ridiculous
@@ -91,8 +99,10 @@ pub fn rate(plaintext: &str) -> Verdict {
         Profile::Normal
     } else if score < 6.8 {
         Profile::Aware
-    } else {
+    } else if score < 8.5 {
         Profile::Careful
+    } else {
+        Profile::Paranoid
     };
 
     let why = match profile {
@@ -116,12 +126,45 @@ pub fn rate(plaintext: &str) -> Verdict {
             "Strong-looking password ({len} chars, {classes} classes) - \
              the target clearly tried - yet your wordlist still rebuilt it from public facts."
         ),
-        Profile::Paranoid => unreachable!(),
+        Profile::Paranoid => format!(
+            "Paranoid-tier password ({len} chars, {classes} classes, high entropy) - \
+             the target did almost everything right - yet your wordlist still cracked it."
+        ),
     };
 
     Verdict {
         score: (score * 10.0).round() / 10.0,
         profile: profile.label(),
         why,
+    }
+}
+
+fn shannon_entropy(s: &str) -> f32 {
+    if s.is_empty() {
+        return 0.0;
+    }
+    let len = s.len() as f32;
+    let mut freq = [0u32; 256];
+    for b in s.bytes() {
+        freq[b as usize] += 1;
+    }
+    let mut entropy = 0.0f32;
+    for &count in &freq {
+        if count > 0 {
+            let p = count as f32 / len;
+            entropy -= p * p.log2();
+        }
+    }
+    entropy
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn six_profiles_exist() {
+        assert_eq!(rate("123456").profile, "Ridiculous");
+        assert_eq!(rate("x7K#mP9qL2vN4wR8zT5hJ").profile, "Paranoid");
     }
 }

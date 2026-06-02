@@ -1,4 +1,4 @@
-//! Per-word expansion: capitalization and leet speak.
+//! Per-word expansion: capitalization, leet speak, and reversal.
 //!
 //! Two transformations, both designed to satisfy real-world complexity policies
 //! the way a human would, while keeping the output set under control.
@@ -171,6 +171,20 @@ pub fn leet_variants(word: &str) -> Vec<String> {
             }
         }
         push_unique(&mut out, &mut seen, variant.into_iter().collect());
+    }
+    out
+}
+
+/// Append the reversed form of every string in `variants`, keeping the originals.
+///
+/// Duplicates (e.g. palindromes) are dropped while preserving order.
+pub fn with_reverse(variants: Vec<String>) -> Vec<String> {
+    let mut out = Vec::with_capacity(variants.len() * 2);
+    let mut seen = HashSet::new();
+    for value in variants {
+        push_unique(&mut out, &mut seen, value.clone());
+        let reversed: String = value.chars().rev().collect();
+        push_unique(&mut out, &mut seen, reversed);
     }
     out
 }

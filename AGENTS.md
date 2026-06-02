@@ -181,6 +181,10 @@ web/
 **Important:** the frontend is embedded with `include_str!`. After editing
 anything in `web/`, you **must `cargo build`** for the change to be served.
 
+**Agent rule:** after **any** code or UI change, always run a build at the end
+(`make build` or `cargo build`) so the binary matches the source. Stop a running
+`mcpscrk` first if `bin/mcpscrk` is locked ("Text file busy").
+
 ---
 
 ## 4. Build & run
@@ -399,6 +403,9 @@ the wordlist build is correct; only the cracking step needs the external tool.
 
 - **Everything in English** — code, comments, docs, UI. Non-negotiable.
 - **No emojis** anywhere in code or UI.
+- **Always build after changes** — run `make build` (or `cargo build`) when you
+  finish editing; the served UI is embedded and Rust changes are not live until
+  you rebuild. Kill a running `mcpscrk` if the copy step reports "Text file busy".
 - **Rebuild after `web/` edits** (assets are `include_str!`-embedded).
 - **Combinatorial explosion** is real: `matrix` capitalization and combinatorial
   leet are guarded by `COMBINATORIAL_CAP` in `engine/expand.rs`. Keep guards.

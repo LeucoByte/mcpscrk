@@ -1,7 +1,7 @@
 //! Assembly block ("piece").
 //!
 //! A block is a puzzle piece: a named set of strings that has already been
-//! mutated (capitalization and/or leet) and is ready to be slotted into the
+//! mutated (capitalization, leet, and/or reversal) and is ready to be slotted into the
 //! blueprint. It is built once, in the modifier lab, and reused.
 //!
 //! Invariant: a block's contents are always a *set* - no duplicates - which is
@@ -19,6 +19,7 @@ use super::expand::{self, CapMode};
 pub struct BlockRules {
     pub cap: CapMode,
     pub leet: bool,
+    pub reverse: bool,
 }
 
 /// A ready-to-assemble piece.
@@ -36,9 +37,8 @@ impl Block {
     /// Build a block from raw values and a set of rules.
     ///
     /// The `source` key drives one special case: a `dates` source is first run
-    /// through the date engine. After that, capitalization and leet are applied
-    /// uniformly (they are no-ops on purely numeric tokens) and the result is
-    /// collapsed into a duplicate-free set.
+    /// through the date engine. After that, capitalization, leet, and reversal
+    /// are applied uniformly and the result is collapsed into a duplicate-free set.
     pub fn build(name: &str, source: &str, raw: &[String], rules: BlockRules) -> Block {
         let base: Vec<String> = if source == "dates" {
             dates::expand_all(raw)
@@ -51,14 +51,18 @@ impl Block {
 
         for token in &base {
             for cased in expand::capitalize(token, rules.cap) {
-                if rules.leet {
-                    for variant in expand::leet_variants(&cased) {
-                        if seen.insert(variant.clone()) {
-                            values.push(variant);
-                        }
+                let mut batch = if rules.leet {
+                    expand::leet_variants(&cased)
+                } else {
+                    vec![cased]
+                };
+                if rules.reverse {
+                    batch = expand::with_reverse(batch);
+                }
+                for variant in batch {
+                    if seen.insert(variant.clone()) {
+                        values.push(variant);
                     }
-                } else if seen.insert(cased.clone()) {
-                    values.push(cased);
                 }
             }
         }
