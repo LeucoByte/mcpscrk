@@ -752,12 +752,33 @@
     updateDetectDisplay();
   }
 
-  function openCrackStation() {
+  // Free online hash-database lookups (no account required).
+  const LOOKUP_SOURCES = [
+    { label: "CrackStation", url: "https://crackstation.net/" },
+    { label: "Hashes.com", url: "https://hashes.com/en/decrypt/hash" },
+    { label: "CrackCrypt", url: "https://crackcrypt.com/" },
+  ];
+
+  function renderLookupActions() {
+    const root = $("#hash-lookup-actions");
+    if (!root) return;
+    root.innerHTML = "";
+    LOOKUP_SOURCES.forEach((src) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn ghost mini";
+      btn.textContent = src.label;
+      btn.addEventListener("click", () => openLookup(src.url));
+      root.appendChild(btn);
+    });
+  }
+
+  function openLookup(url) {
     const hash = $("#crack-hash").value.trim();
     if (hash && navigator.clipboard) {
       navigator.clipboard.writeText(hash).catch(() => {});
     }
-    window.open("https://crackstation.net/", "_blank", "noopener");
+    window.open(url, "_blank", "noopener");
   }
 
   function currentEngine() {
@@ -962,7 +983,7 @@
 
     // Cracking lab.
     $("#detect-run").addEventListener("click", detectHash);
-    $("#crackstation-run").addEventListener("click", openCrackStation);
+    renderLookupActions();
     $("#crack-run").addEventListener("click", runCrack);
     $("#crack-cancel").addEventListener("click", cancelCrack);
     setupDropzone();

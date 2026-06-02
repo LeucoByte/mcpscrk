@@ -228,6 +228,12 @@
       </div>
 
       <div class="grid">
+        <div class="card span2 lookup-card">
+          <div class="card-title">Lookup</div>
+          <p class="lookup-lead">Validate hash against known breach repositories before initializing brute force.</p>
+          <div id="hash-lookup-actions" class="lookup-sources"></div>
+        </div>
+
         <div class="card">
           <div class="card-title">Section A &middot; Target Hash</div>
           <div class="field">
@@ -240,10 +246,6 @@
           </div>
           <div id="detect-status" class="status"></div>
           <div id="detect-john" class="status"></div>
-          <div class="crackstation">
-            <button id="crackstation-run" class="btn ghost mini">Try CrackStation first</button>
-            <span class="hint">Already-indexed hashes crack instantly there - check before you burn cycles.</span>
-          </div>
         </div>
 
         <div class="card">
@@ -268,6 +270,7 @@
 
         <div class="card span2">
           <div class="card-title">Section C &middot; Run</div>
+          <p class="run-lead">Cracks the hash from Section A (after detection) with the engine and wordlist from Section B.</p>
           <div class="row">
             <button id="crack-run" class="btn solid">Start cracking</button>
             <button id="crack-cancel" class="btn ghost hidden" disabled>Cancel</button>
