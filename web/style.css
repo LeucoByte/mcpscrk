@@ -262,8 +262,16 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--red); }
   letter-spacing: 1.8px;
   text-transform: uppercase;
   color: var(--red);
+  margin-bottom: 0;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 12px;
 }
+.card-head .card-title { flex: 1; }
 
 .field { margin-bottom: 12px; }
 .field.grow { flex: 1; }
@@ -385,8 +393,9 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--red); }
 .forge-controls .field { margin-bottom: 0; min-width: 120px; }
 .metrics {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 12px;
+  gap: 8px 12px;
   margin: 18px 0;
   padding: 12px 14px;
   background: var(--bg-2);
@@ -394,6 +403,8 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--red); }
   border-left: 2px solid var(--red);
   border-radius: 4px;
 }
+.metrics .metric-label { flex: 1 1 100%; margin-bottom: 2px; }
+.metrics .metric-value { font-family: var(--mono); font-size: 15px; color: var(--amber); word-break: break-all; }
 .metric-label { font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); }
 .metric-value { font-size: 22px; color: var(--amber); font-weight: 700; font-family: var(--mono); }
 

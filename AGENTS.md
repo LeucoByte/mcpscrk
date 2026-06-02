@@ -268,6 +268,9 @@ curl -s localhost:8787/api/block/peek -H 'content-type: application/json' \
 curl -s localhost:8787/api/block/delete -H 'content-type: application/json' \
   -d '{"name":"Firstname"}'
 
+# Remove all crafted blocks; permanent blocks stay (Date, Digit, symbols).
+curl -s -X POST localhost:8787/api/blocks/clear
+
 # Edit a permanent symbol block (name = Separator | Special Char | All Symbols).
 # Empty values restores defaults (including leading ""). Use "" in CSV for null slot.
 curl -s localhost:8787/api/specials -H 'content-type: application/json' \
@@ -305,6 +308,14 @@ curl -s 'localhost:8787/api/download?path=/tmp/wordlist.txt' -o out.txt
 
 The attack runs **asynchronously**: `start` kicks it off, then you **poll**
 `status` for live progress, and `cancel` kills it. Only one job at a time.
+
+**Duplicate lines:** do not worry about duplicate candidates showing up in forge
+stats or even repeated lines in a wordlist file. The UI does **not** surface forge
+`duplicates` to the operator. On **`POST /api/crack/start`**, `prepare_wordlist_for_attack()`
+in `server/routes.rs` strips duplicate lines (keeps first occurrence), uses a
+temp copy if needed, and sets `CrackJob.total` to the **unique** line count. Any
+`note` on status reports how many lines were removed. Operators only need unique
+candidates at attack time.
 
 ```bash
 # Which engines are installed?
@@ -401,6 +412,10 @@ the wordlist build is correct; only the cracking step needs the external tool.
   zero characters for that slot).
 - **Length filter** — `min`/`max` of `-` (UI) means no bound (`filters.rs`). Match
   the target site's policy in forge to cut noise early (especially on append passes).
+- **Forge `duplicates` stat** — `engine/forge.rs` still counts collisions during a
+  pass (append vs existing file, rare odometer collisions). The forge report UI
+  omits this on purpose: **Strike dedupes on start**, so operators should not tune
+  blueprints around forge duplicate counts.
 - **Hashcat install pain:** the distro `.deb` extracted by hand tends to miss
   OpenCL kernels/`libminizip`. Use `sudo apt install` + an OpenCL ICD (`pocl`)
   rather than hand-extracting packages. The previous agent burned a lot of time

@@ -56,6 +56,7 @@
     editingSymbols: null, // symbol block currently open in the editor
     engines: null, // { hashcat: bool, john: bool } availability
     wordlistEntries: 0, // entries in the attached wordlist
+    sessionForged: 0, // entries written to out-path this session (for append totals)
     crackTimer: null, // status-poll timer handle
     detection: null, // { candidates, john, source } from last detect run
   };
@@ -264,6 +265,20 @@
     renderBlueprint();
   }
 
+  async function clearCraftedInventory() {
+    const resp = await api("/api/blocks/clear", "POST", {});
+    state.inventory = resp.blocks;
+    const kept = new Set(resp.blocks.map((b) => b.name));
+    state.blueprint = state.blueprint.filter((n) => kept.has(n));
+    renderInventory();
+    renderBlueprint();
+  }
+
+  function clearBlueprint() {
+    state.blueprint = [];
+    renderBlueprint();
+  }
+
   function blockByName(name) {
     return state.inventory.find((b) => b.name === name);
   }
@@ -405,14 +420,38 @@
     });
   }
 
-  // Estimate = product of block sizes, computed with BigInt.
-  function updateEstimate() {
+  // Product of block sizes for the current blueprint (BigInt).
+  function blueprintEstimate() {
     let total = state.blueprint.length ? 1n : 0n;
     for (const name of state.blueprint) {
       const b = blockByName(name);
       total *= BigInt(b ? b.count : 0);
     }
-    $("#estimate").textContent = groupDigits(total.toString());
+    return total;
+  }
+
+  function updateForgeButtonLabel() {
+    const btn = $("#forge-run");
+    btn.textContent =
+      currentMode() === "append" ? "Append to wordlist" : "Forge wordlist";
+  }
+
+  function updateEstimate() {
+    const pass = blueprintEstimate();
+    const passStr = groupDigits(pass.toString());
+    const onDisk = state.sessionForged;
+    const label = $("#estimate-label");
+    const value = $("#estimate");
+
+    if (currentMode() === "append" && onDisk > 0) {
+      const total = BigInt(onDisk) + pass;
+      label.textContent = "Estimated combinations (append)";
+      value.textContent = `${passStr} + ${groupDigits(String(onDisk))} = ${groupDigits(total.toString())}`;
+    } else {
+      label.textContent = "Estimated combinations";
+      value.textContent = passStr;
+    }
+    updateForgeButtonLabel();
   }
 
   // --- info popups ----------------------------------------------------------
@@ -487,7 +526,7 @@
     const s = resp.stats;
     let header =
       `# preview - ${resp.lines.length} shown\n` +
-      `# generated=${s.generated} emitted=${s.emitted} filtered=${s.filtered} duplicates=${s.duplicates} type=${s.kind}\n`;
+      `# generated=${s.generated} emitted=${s.emitted} filtered=${s.filtered} type=${s.kind}\n`;
     if (s.emitted === 0 && s.generated > 0) {
       header += `# all ${groupDigits(String(s.generated))} candidates fell outside length ${boundsLabel(min, max)} - widen the range.\n`;
     }
@@ -512,8 +551,11 @@
       `<tr><td class="k">Type</td><td>${s.kind}</td></tr>` +
       `<tr><td class="k">Generated</td><td>${groupDigits(String(s.generated))}</td></tr>` +
       `<tr><td class="k">Filtered out</td><td>${groupDigits(String(s.filtered))}</td></tr>` +
-      `<tr><td class="k">Duplicates</td><td>${groupDigits(String(s.duplicates))}</td></tr>` +
       `</table>`;
+
+    if (currentMode() === "overwrite") state.sessionForged = s.emitted;
+    else state.sessionForged += s.emitted;
+    updateEstimate();
   }
 
   function flashReport(msg, isError) {
@@ -895,9 +937,18 @@
     $("#profile-update").addEventListener("click", updateProfile);
     $("#profile-clear").addEventListener("click", clearProfile);
     $("#block-create").addEventListener("click", createBlock);
+    $("#inventory-clear").addEventListener("click", clearCraftedInventory);
+    $("#blueprint-clear").addEventListener("click", clearBlueprint);
     $("#test-run").addEventListener("click", testWord);
     $("#preview-run").addEventListener("click", runPreview);
     $("#forge-run").addEventListener("click", runForge);
+    document.querySelectorAll('input[name="mode"]').forEach((r) => {
+      r.addEventListener("change", updateEstimate);
+    });
+    $("#out-path").addEventListener("change", () => {
+      state.sessionForged = 0;
+      updateEstimate();
+    });
     $("#download-run").addEventListener("click", downloadWordlist);
     $("#modal-close").addEventListener("click", closeModal);
     $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
@@ -921,6 +972,7 @@
       });
     });
 
+    updateForgeButtonLabel();
     // Load the fixed blocks (Date, Digit, symbols…) on startup.
     refreshInventory();
   }

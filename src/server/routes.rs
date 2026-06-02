@@ -14,8 +14,8 @@
 //!   POST /api/preview           -> first N generated candidates
 //!   POST /api/forge             -> generate the wordlist to a file
 
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 use axum::{
     extract::{Multipart, Query, State},
@@ -55,6 +55,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/block", post(create_block))
         .route("/api/blocks", get(list_blocks))
         .route("/api/block/delete", post(delete_block))
+        .route("/api/blocks/clear", post(clear_blocks))
         .route("/api/block/peek", post(peek_block))
         .route("/api/material/peek", post(peek_material))
         .route("/api/specials", post(set_specials))
@@ -181,13 +182,19 @@ fn collect_materials(profile: &sets::ProfileSets) -> Vec<MaterialDto> {
             continue;
         }
         if let Some(values) = profile.get(entry.key) {
-            if !values.is_empty() {
+            let count = values.iter().filter(|v| !v.is_empty()).count();
+            if count > 0 {
                 materials.push(MaterialDto {
                     key: entry.key.to_string(),
                     label: entry.label.to_string(),
                     category: entry.category.label().to_string(),
-                    count: values.len(),
-                    sample: values.iter().take(3).cloned().collect(),
+                    count,
+                    sample: values
+                        .iter()
+                        .filter(|v| !v.is_empty())
+                        .take(3)
+                        .cloned()
+                        .collect(),
                 });
             }
         }
@@ -316,12 +323,20 @@ struct DeleteBlockBody {
     name: String,
 }
 
-/// Remove a crafted block. The fixed specials block is never removed.
+/// Remove a crafted block from the inventory (permanent blocks are not stored here).
 async fn delete_block(State(state): State<AppState>, Json(body): Json<DeleteBlockBody>) -> Json<BlocksResponse> {
     let mut ws = state.workshop.lock().unwrap();
-    if body.name != SPECIAL_CHAR_BLOCK {
-        ws.inventory.retain(|b| b.name != body.name);
-    }
+    ws.inventory.retain(|b| b.name != body.name);
+    Json(BlocksResponse {
+        blocks: inventory_dto(&ws),
+        error: None,
+    })
+}
+
+/// Remove every crafted block; permanent blocks (Date, Digit, symbols) stay.
+async fn clear_blocks(State(state): State<AppState>) -> Json<BlocksResponse> {
+    let mut ws = state.workshop.lock().unwrap();
+    ws.inventory.clear();
     Json(BlocksResponse {
         blocks: inventory_dto(&ws),
         error: None,
@@ -687,15 +702,48 @@ struct AckResponse {
     error: Option<String>,
 }
 
-/// Count the entries (non-empty lines) of the wordlist, for the progress bar.
-async fn count_entries(path: &std::path::Path) -> u64 {
-    match tokio::fs::read(path).await {
-        Ok(bytes) => bytes
-            .split(|b| *b == b'\n')
-            .filter(|l| !l.is_empty())
-            .count() as u64,
-        Err(_) => 0,
+/// Wordlist ready for hashcat/john: unique non-empty lines, deduped on disk if needed.
+struct PreparedWordlist {
+    path: PathBuf,
+    unique: u64,
+    duplicates_removed: u64,
+}
+
+/// Read a wordlist, drop duplicate lines (keeps first occurrence), write a temp
+/// copy only when duplicates were present.
+async fn prepare_wordlist_for_attack(src: &Path) -> anyhow::Result<PreparedWordlist> {
+    let bytes = tokio::fs::read(src).await?;
+    let mut seen = HashSet::new();
+    let mut unique_lines = Vec::new();
+    let mut raw = 0u64;
+    for line in bytes.split(|b| *b == b'\n') {
+        if line.is_empty() {
+            continue;
+        }
+        raw += 1;
+        let s = String::from_utf8_lossy(line).into_owned();
+        if seen.insert(s.clone()) {
+            unique_lines.push(s);
+        }
     }
+    let unique = unique_lines.len() as u64;
+    let duplicates_removed = raw.saturating_sub(unique);
+    if duplicates_removed == 0 {
+        return Ok(PreparedWordlist {
+            path: src.to_path_buf(),
+            unique,
+            duplicates_removed: 0,
+        });
+    }
+    let dest = runner::temp_path("wl-dedup");
+    let mut body = unique_lines.join("\n");
+    body.push('\n');
+    tokio::fs::write(&dest, body).await?;
+    Ok(PreparedWordlist {
+        path: dest,
+        unique,
+        duplicates_removed,
+    })
 }
 
 /// Launch the attack in the background. The UI then polls `/api/crack/status`.
@@ -716,15 +764,31 @@ async fn crack_start(State(state): State<AppState>, Json(body): Json<RunBody>) -
         });
     }
 
-    let available = runner::available().await;
-    let total = count_entries(&wordlist).await;
+    let prep = match prepare_wordlist_for_attack(&wordlist).await {
+        Ok(p) => p,
+        Err(e) => {
+            return Json(AckResponse {
+                ok: false,
+                error: Some(format!("Could not read wordlist: {e}")),
+            });
+        }
+    };
 
-    crack::job::begin(&state.crack, total);
+    let available = runner::available().await;
+
+    crack::job::begin(&state.crack, prep.unique);
+    if prep.duplicates_removed > 0 {
+        state.crack.lock().unwrap().note = Some(format!(
+            "Removed {} duplicate line(s) from the wordlist before attack.",
+            prep.duplicates_removed
+        ));
+    }
 
     let crack = state.crack.clone();
     let RunBody { hash, engine, mode, john_format, .. } = body;
+    let attack_list = prep.path;
     tokio::spawn(async move {
-        crack::job::run(crack, available, engine, hash, mode, john_format, wordlist).await;
+        crack::job::run(crack, available, engine, hash, mode, john_format, attack_list).await;
     });
 
     Json(AckResponse { ok: true, error: None })

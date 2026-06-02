@@ -175,8 +175,13 @@ pub struct ProfileSets {
 impl ProfileSets {
     /// Replace the values of `key`, parsing a comma-separated string and
     /// dropping blanks and duplicates. An empty input removes the parameter.
+    /// Profile fields never store null-choice (`""`) slots — those are for
+    /// symbol blocks only.
     pub fn set_field(&mut self, key: &str, raw_csv: &str) {
-        let values = parse_csv(raw_csv);
+        let values: Vec<String> = parse_csv(raw_csv)
+            .into_iter()
+            .filter(|v| !v.is_empty())
+            .collect();
         self.params.retain(|p| p.key != key);
         if !values.is_empty() {
             self.params.push(Param {
@@ -223,8 +228,12 @@ fn parse_csv_token(token: &str) -> String {
 /// Split a comma-separated string into trimmed, de-duplicated values.
 ///
 /// Blank fields and `""` mean the null choice (contribute nothing in that loop).
-/// Order is preserved so the user sees their input echoed back predictably.
+/// An empty or whitespace-only input yields no values (used by profile clears and
+/// symbol-block reset). Order is preserved so the user sees their input echoed back.
 pub fn parse_csv(raw: &str) -> Vec<String> {
+    if raw.trim().is_empty() {
+        return Vec::new();
+    }
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for token in raw.split(',') {
@@ -256,6 +265,8 @@ mod tests {
 
     #[test]
     fn parse_csv_null_and_symbols() {
+        assert_eq!(parse_csv(""), Vec::<String>::new());
+        assert_eq!(parse_csv("   "), Vec::<String>::new());
         assert_eq!(parse_csv("\"\""), vec![String::new()]);
         assert_eq!(
             parse_csv("\"\",."),
